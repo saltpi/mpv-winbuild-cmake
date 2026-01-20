@@ -254,8 +254,8 @@ jobs:
             echo "Package size:"
             ls -lh "$OUTPUT_FILE"
             echo ""
-            echo "Package contents:"
-            7z l "$OUTPUT_FILE" | head -50
+            echo "Package contents (first 50 lines):"
+            7z l "$OUTPUT_FILE" | head -50 || true
           else
             echo "ERROR: Package file $OUTPUT_FILE was not created"
             exit 1
