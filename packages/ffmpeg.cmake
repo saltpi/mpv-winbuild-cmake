@@ -61,6 +61,8 @@ ExternalProject_Add(ffmpeg
         --enable-runtime-cpudetect
         --enable-gpl
         --enable-version3
+        --enable-shared
+        --enable-static
         --enable-avisynth
         --enable-vapoursynth
         --enable-libass

@@ -124,6 +124,206 @@ jobs:
           hash=$(git -C src_packages/ffmpeg rev-parse --short HEAD)
           7z a -m0=lzma2 -mx=9 -ms=on release_$BIT/ffmpeg-${{ env.arch }}${{ env.x86_64_level }}-git-$hash.7z ./build_$BIT/$BIT-w64-mingw32/bin/ffmpeg.exe
 
+      - name: Collecting FFmpeg libraries
+        run: |
+          set -e
+          BUILD_DIR="build_$BIT/$BIT-w64-mingw32"
+          STAGING_DIR="ffmpeg_libs_$BIT"
+          
+          # Check if build directory exists
+          if [ ! -d "$BUILD_DIR" ]; then
+            echo "ERROR: Build directory $BUILD_DIR does not exist"
+            exit 1
+          fi
+          
+          echo "Creating staging directory structure..."
+          mkdir -p "${STAGING_DIR}"/{bin,lib,include}
+          
+          echo "Collecting DLL files..."
+          cp "${BUILD_DIR}/bin"/av*.dll "${STAGING_DIR}/bin/" 2>/dev/null || echo "WARNING: No av*.dll files found"
+          cp "${BUILD_DIR}/bin"/sw*.dll "${STAGING_DIR}/bin/" 2>/dev/null || echo "WARNING: No sw*.dll files found"
+          cp "${BUILD_DIR}/bin"/postproc*.dll "${STAGING_DIR}/bin/" 2>/dev/null || echo "WARNING: No postproc*.dll files found"
+          
+          echo "Collecting import libraries..."
+          cp "${BUILD_DIR}/lib"/libav*.dll.a "${STAGING_DIR}/lib/" 2>/dev/null || echo "WARNING: No libav*.dll.a files found"
+          cp "${BUILD_DIR}/lib"/libsw*.dll.a "${STAGING_DIR}/lib/" 2>/dev/null || echo "WARNING: No libsw*.dll.a files found"
+          cp "${BUILD_DIR}/lib"/libpostproc*.dll.a "${STAGING_DIR}/lib/" 2>/dev/null || echo "WARNING: No libpostproc*.dll.a files found"
+          
+          echo "Collecting static libraries..."
+          cp "${BUILD_DIR}/lib"/libav*.a "${STAGING_DIR}/lib/" 2>/dev/null || echo "WARNING: No libav*.a files found"
+          cp "${BUILD_DIR}/lib"/libsw*.a "${STAGING_DIR}/lib/" 2>/dev/null || echo "WARNING: No libsw*.a files found"
+          cp "${BUILD_DIR}/lib"/libpostproc*.a "${STAGING_DIR}/lib/" 2>/dev/null || echo "WARNING: No libpostproc*.a files found"
+          
+          echo "Collecting header files..."
+          cp -r "${BUILD_DIR}/include"/libav* "${STAGING_DIR}/include/" 2>/dev/null || echo "WARNING: No libav* headers found"
+          cp -r "${BUILD_DIR}/include"/libsw* "${STAGING_DIR}/include/" 2>/dev/null || echo "WARNING: No libsw* headers found"
+          cp -r "${BUILD_DIR}/include"/libpostproc "${STAGING_DIR}/include/" 2>/dev/null || echo "WARNING: No libpostproc headers found"
+          
+          echo "Library collection completed."
+          echo "Contents of ${STAGING_DIR}:"
+          ls -lah "${STAGING_DIR}/bin/" 2>/dev/null || echo "No DLL files found"
+          ls -lah "${STAGING_DIR}/lib/" 2>/dev/null || echo "No library files found"
+          ls -lah "${STAGING_DIR}/include/" 2>/dev/null || echo "No header files found"
+
+      - name: Verifying FFmpeg libraries
+        run: |
+          set -e
+          STAGING_DIR="ffmpeg_libs_$BIT"
+          REQUIRED_LIBS=("avcodec" "avformat" "avutil" "swscale" "swresample")
+          MISSING_LIBS=()
+          
+          echo "Verifying FFmpeg libraries..."
+          
+          # Check if staging directory exists
+          if [ ! -d "$STAGING_DIR" ]; then
+            echo "ERROR: Staging directory $STAGING_DIR does not exist"
+            exit 1
+          fi
+          
+          # Check for required core libraries
+          for lib in "${REQUIRED_LIBS[@]}"; do
+            if ! ls "${STAGING_DIR}/bin/${lib}"*.dll 1> /dev/null 2>&1; then
+              MISSING_LIBS+=("$lib")
+              echo "ERROR: Missing required library: ${lib}"
+            fi
+          done
+          
+          # Report results
+          if [ ${#MISSING_LIBS[@]} -ne 0 ]; then
+            echo "ERROR: Missing required libraries: ${MISSING_LIBS[*]}"
+            echo "This indicates that FFmpeg was not compiled with --enable-shared option"
+            echo "or the compilation failed to produce shared libraries."
+            exit 1
+          fi
+          
+          echo "✓ All required libraries found!"
+          echo ""
+          echo "DLL files:"
+          ls -lh "${STAGING_DIR}/bin"/*.dll
+          echo ""
+          echo "Import libraries:"
+          ls -lh "${STAGING_DIR}/lib"/*.dll.a 2>/dev/null || echo "WARNING: No .dll.a files found"
+          echo ""
+          echo "Static libraries:"
+          ls -lh "${STAGING_DIR}/lib"/*.a 2>/dev/null | grep -v "\.dll\.a" || echo "WARNING: No .a files found"
+          echo ""
+          echo "Header directories:"
+          ls -d "${STAGING_DIR}/include"/*/ 2>/dev/null || echo "WARNING: No header directories found"
+
+      - name: Generating README
+        run: |
+          set -e
+          STAGING_DIR="ffmpeg_libs_$BIT"
+          HASH=$(git -C src_packages/ffmpeg rev-parse --short HEAD)
+          BUILD_DATE=$(date "+%Y-%m-%d %H:%M:%S UTC")
+          
+          if [ -z "$HASH" ]; then
+            echo "ERROR: Failed to get FFmpeg git hash"
+            exit 1
+          fi
+          
+          cat > "${STAGING_DIR}/README.txt" <<'EOF'
+FFmpeg Development Libraries
+============================
+
+Build Information:
+- Architecture: ${{ env.arch }}${{ env.x86_64_level }}
+- Git Commit: HASH_PLACEHOLDER
+- Build Date: DATE_PLACEHOLDER
+- Toolchain: LLVM/Clang with mingw-w64
+
+Contents:
+- bin/     : Dynamic link libraries (DLL files)
+- lib/     : Import libraries for linking (.dll.a files) and static libraries (.a files)
+- include/ : C header files for development
+
+Usage:
+1. Add the bin/ directory to your PATH or copy DLLs to your application directory
+2. Link against the import libraries in lib/ during compilation
+3. Include the headers from include/ in your source code
+
+Example (MinGW):
+  gcc -I./include myapp.c -L./lib -lavcodec -lavformat -lavutil -o myapp.exe
+
+Example (MSVC with clang-cl):
+  clang-cl /I./include myapp.c /link /LIBPATH:./lib avcodec.lib avformat.lib avutil.lib
+
+Example (CMake):
+  set(FFMPEG_ROOT "/path/to/ffmpeg-libs")
+  include_directories(${FFMPEG_ROOT}/include)
+  link_directories(${FFMPEG_ROOT}/lib)
+  target_link_libraries(myapp avcodec avformat avutil swscale swresample)
+
+For more information, visit: https://ffmpeg.org/documentation.html
+
+Note: Make sure the DLL files are in your application's directory or in a directory
+listed in your PATH environment variable when running your application.
+EOF
+          
+          # Replace placeholders
+          sed -i "s/HASH_PLACEHOLDER/$HASH/g" "${STAGING_DIR}/README.txt"
+          sed -i "s/DATE_PLACEHOLDER/$BUILD_DATE/g" "${STAGING_DIR}/README.txt"
+          
+          if [ ! -f "${STAGING_DIR}/README.txt" ]; then
+            echo "ERROR: Failed to generate README.txt"
+            exit 1
+          fi
+          
+          echo "✓ README.txt generated successfully"
+          echo "Contents:"
+          cat "${STAGING_DIR}/README.txt"
+
+      - name: Packaging FFmpeg libraries
+        run: |
+          set -e
+          STAGING_DIR="ffmpeg_libs_$BIT"
+          HASH=$(git -C src_packages/ffmpeg rev-parse --short HEAD)
+          OUTPUT_FILE="release_$BIT/ffmpeg-libs-${{ env.arch }}${{ env.x86_64_level }}-git-$HASH.7z"
+          
+          if [ -z "$HASH" ]; then
+            echo "ERROR: Failed to get FFmpeg git hash"
+            exit 1
+          fi
+          
+          if [ ! -d "$STAGING_DIR" ]; then
+            echo "ERROR: Staging directory $STAGING_DIR does not exist"
+            exit 1
+          fi
+          
+          echo "Creating FFmpeg libraries package..."
+          echo "Output file: $OUTPUT_FILE"
+          
+          # Create the archive
+          if ! 7z a -m0=lzma2 -mx=9 -ms=on "$OUTPUT_FILE" "./${STAGING_DIR}/*"; then
+            echo "ERROR: Failed to create archive with 7z"
+            exit 1
+          fi
+          
+          # Verify the package was created
+          if [ -f "$OUTPUT_FILE" ]; then
+            echo "✓ Package created successfully!"
+            echo "Package size:"
+            ls -lh "$OUTPUT_FILE"
+            echo ""
+            echo "Package contents:"
+            7z l "$OUTPUT_FILE" | head -50
+          else
+            echo "ERROR: Package file $OUTPUT_FILE was not created"
+            exit 1
+          fi
+
+      - name: Cleaning FFmpeg libraries staging directory
+        if: always()
+        run: |
+          STAGING_DIR="ffmpeg_libs_$BIT"
+          if [ -d "$STAGING_DIR" ]; then
+            echo "Cleaning up staging directory: $STAGING_DIR"
+            rm -rf "$STAGING_DIR"
+            echo "✓ Staging directory cleaned"
+          else
+            echo "Staging directory $STAGING_DIR does not exist, nothing to clean"
+          fi
+
       - name: Collecting logs
         if: always()
         run: |
@@ -150,6 +350,13 @@ jobs:
         with:
           name: mpv-${{ matrix.bit }}-debug
           path: release_${{ matrix.bit }}/mpv-debug-${{ env.arch }}*
+
+      - name: Uploading ${{ matrix.bit }} FFmpeg libraries
+        uses: actions/upload-artifact@master
+        with:
+          name: ffmpeg-libs-${{ matrix.bit }}
+          path: release_${{ matrix.bit }}/ffmpeg-libs-*.7z
+          retention-days: 30
 
       - name: Cleaning build directory
         if: always()
