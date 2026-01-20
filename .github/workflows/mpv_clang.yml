@@ -221,57 +221,6 @@ jobs:
             echo "ERROR: Failed to get FFmpeg git hash"
             exit 1
           fi
-          
-          cat > "${STAGING_DIR}/README.txt" <<'EOF'
-FFmpeg Development Libraries
-============================
-
-Build Information:
-- Architecture: ${{ env.arch }}${{ env.x86_64_level }}
-- Git Commit: HASH_PLACEHOLDER
-- Build Date: DATE_PLACEHOLDER
-- Toolchain: LLVM/Clang with mingw-w64
-
-Contents:
-- bin/     : Dynamic link libraries (DLL files)
-- lib/     : Import libraries for linking (.dll.a files) and static libraries (.a files)
-- include/ : C header files for development
-
-Usage:
-1. Add the bin/ directory to your PATH or copy DLLs to your application directory
-2. Link against the import libraries in lib/ during compilation
-3. Include the headers from include/ in your source code
-
-Example (MinGW):
-  gcc -I./include myapp.c -L./lib -lavcodec -lavformat -lavutil -o myapp.exe
-
-Example (MSVC with clang-cl):
-  clang-cl /I./include myapp.c /link /LIBPATH:./lib avcodec.lib avformat.lib avutil.lib
-
-Example (CMake):
-  set(FFMPEG_ROOT "/path/to/ffmpeg-libs")
-  include_directories(${FFMPEG_ROOT}/include)
-  link_directories(${FFMPEG_ROOT}/lib)
-  target_link_libraries(myapp avcodec avformat avutil swscale swresample)
-
-For more information, visit: https://ffmpeg.org/documentation.html
-
-Note: Make sure the DLL files are in your application's directory or in a directory
-listed in your PATH environment variable when running your application.
-EOF
-          
-          # Replace placeholders
-          sed -i "s/HASH_PLACEHOLDER/$HASH/g" "${STAGING_DIR}/README.txt"
-          sed -i "s/DATE_PLACEHOLDER/$BUILD_DATE/g" "${STAGING_DIR}/README.txt"
-          
-          if [ ! -f "${STAGING_DIR}/README.txt" ]; then
-            echo "ERROR: Failed to generate README.txt"
-            exit 1
-          fi
-          
-          echo "✓ README.txt generated successfully"
-          echo "Contents:"
-          cat "${STAGING_DIR}/README.txt"
 
       - name: Packaging FFmpeg libraries
         run: |
